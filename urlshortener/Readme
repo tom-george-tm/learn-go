@@ -1,0 +1,274 @@
+
+
+# URL Shortener — Go + Fiber + GORM + PostgreSQL
+
+A production-ready URL shortener built with Fiber (the fastest Go HTTP framework).
+
+---
+
+## Why Fiber?
+
+| Feature | Fiber | Gin |
+|---------|-------|-----|
+| HTTP engine | fasthttp (custom) | net/http (standard) |
+| Requests/sec | ~300k+ | ~150k+ |
+| API style | Express.js-like | Rails-like |
+| Memory usage | Very low | Low |
+
+Fiber uses `fasthttp` under the hood which avoids many allocations that
+Go's standard `net/http` makes. Great choice for high-traffic services.
+
+---
+
+## Project Structure
+
+```
+urlshortener/
+├── cmd/
+│   └── main.go                     ← entry point, wires all layers together
+├── internal/
+│   ├── config/
+│   │   └── config.go               ← reads .env / environment variables
+│   ├── database/
+│   │   └── database.go             ← PostgreSQL connection + migrations
+│   ├── models/
+│   │   └── url.go                  ← GORM model (maps to "urls" table)
+│   ├── repository/
+│   │   └── url_repository.go       ← all DB queries, nothing else
+│   ├── service/
+│   │   └── url_service.go          ← all business logic, nothing else
+│   └── handlers/
+│       └── url_handler.go          ← Fiber handlers (HTTP layer only)
+├── .env.example                    ← copy to .env and fill in values
+├── go.mod
+└── README.md
+```
+
+### Layer Responsibilities
+
+```
+config      → knows about environment variables only
+database    → knows about PostgreSQL connection only
+models      → knows about data shape only
+repository  → knows about database queries only
+service     → knows about business rules only  (no HTTP!)
+handlers    → knows about HTTP only            (no business logic!)
+main        → wires everything together
+```
+
+---
+
+## Quick Start
+
+### Prerequisites
+- Go 1.22 or later
+- PostgreSQL 14 or later
+
+### Steps
+
+```bash
+# 1. Set up your config
+cp .env.example .env
+# Edit .env — set your DB_DSN with your postgres password
+
+# 2. Create the PostgreSQL database
+psql -U postgres -c "CREATE DATABASE urlshortener;"
+
+# 3. Install Go dependencies
+go mod tidy
+
+# 4. Run the server (GORM auto-creates the table on first run)
+go run cmd/main.go
+```
+
+You should see:
+```
+✅ PostgreSQL connected
+🔄 Running database migrations...
+✅ Migrations complete
+🌐 Listening on http://localhost:3000
+```
+
+---
+
+## API Reference
+
+### POST /api/urls/ — Create Short URL
+
+```bash
+curl -X POST http://localhost:3000/api/urls/ \
+  -H "Content-Type: application/json" \
+  -d '{
+    "original_url": "https://www.google.com",
+    "custom_code": "goog",
+    "expires_in_hours": 72
+  }'
+```
+
+Response `201`:
+```json
+{
+  "success": true,
+  "data": {
+    "short_code": "goog",
+    "short_url": "http://localhost:3000/goog",
+    "original_url": "https://www.google.com",
+    "clicks": 0,
+    "expires_at": "2024-01-04T12:00:00Z",
+    "created_at": "2024-01-01T12:00:00Z"
+  }
+}
+```
+
+---
+
+### GET /:code — Redirect
+
+```bash
+# Follow the redirect with -L
+curl -L http://localhost:3000/goog
+
+# Or open in browser:
+# http://localhost:3000/goog
+```
+
+Returns `302 Found` → redirects to `https://www.google.com`
+
+---
+
+### GET /api/urls/:code — Get Stats
+
+```bash
+curl http://localhost:3000/api/urls/goog
+```
+
+Response `200`:
+```json
+{
+  "success": true,
+  "data": {
+    "short_code": "goog",
+    "short_url": "http://localhost:3000/goog",
+    "original_url": "https://www.google.com",
+    "clicks": 17,
+    "created_at": "2024-01-01T12:00:00Z"
+  }
+}
+```
+
+---
+
+### GET /api/urls/ — List All URLs
+
+```bash
+curl http://localhost:3000/api/urls/
+```
+
+Response `200`:
+```json
+{
+  "success": true,
+  "count": 3,
+  "data": [ ... ]
+}
+```
+
+---
+
+### DELETE /api/urls/:code — Delete URL
+
+```bash
+curl -X DELETE http://localhost:3000/api/urls/goog
+```
+
+Response `200`:
+```json
+{
+  "success": true,
+  "message": "Short URL deleted successfully"
+}
+```
+
+---
+
+### GET /health — Health Check
+
+```bash
+curl http://localhost:3000/health
+```
+
+Response `200`:
+```json
+{ "status": "ok", "service": "url-shortener" }
+```
+
+---
+
+## Error Responses
+
+All errors follow the same shape:
+
+```json
+{
+  "success": false,
+  "error": "Short URL not found"
+}
+```
+
+| Status | When |
+|--------|------|
+| 400    | Invalid URL or bad request body |
+| 404    | Short code doesn't exist |
+| 409    | Custom code already taken |
+| 410    | Short URL has expired |
+| 500    | Unexpected server error |
+
+---
+
+## Go Concepts Demonstrated
+
+| Concept | File |
+|---------|------|
+| Structs & methods | models/url.go |
+| Interfaces | URLRepository, URLService |
+| Error wrapping (`%w`) | repository, service |
+| Sentinel errors | `ErrNotFound`, `ErrURLExpired` |
+| Goroutines | Click counter in service (fire-and-forget) |
+| Pointer receivers | GORM model methods |
+| Dependency injection | cmd/main.go |
+| Variadic middleware | `app.Use(...)` in main.go |
+
+---
+
+## Fiber vs Gin — Key Differences in Code
+
+### Context object
+```go
+// Gin
+func (h *Handler) Create(c *gin.Context) {
+    c.ShouldBindJSON(&req)
+    c.JSON(201, gin.H{"data": resp})
+}
+
+// Fiber
+func (h *Handler) Create(c *fiber.Ctx) error {   // returns error!
+    c.BodyParser(&req)
+    return c.Status(201).JSON(fiber.Map{"data": resp})
+}
+```
+
+### Key difference
+Fiber handlers return `error` — this lets Fiber's error handler
+centralise all error responses. Gin handlers return nothing.
+
+### Route params
+```go
+c.Param("code")    // Gin
+c.Params("code")   // Fiber
+```
+
+### JSON response
+```go
+c.JSON(200, gin.H{"key": "value"})      // Gin
+c.Status(200).JSON(fiber.Map{"key": "value"}) // Fiber
+```

@@ -1,0 +1,41 @@
+Stage 1 — Control Flow & Data Structures
+These are the building blocks you'll use in every program.
+
+If / else — conditional logic
+For loops — Go's only loop (used as while too)
+Switch statements — cleaner alternative to multiple if/else
+Arrays & Slices — lists of data
+Maps — key-value pairs (like a dictionary)
+
+Stage 2 — Structs & Methods
+This is where Go starts to feel powerful.
+
+Structs — grouping related data together
+Methods on structs — attaching functions to your data types
+Pointers — understanding memory addresses and * / &
+Interfaces — defining behaviour, not data (Go's version of abstraction)
+
+Stage 3 — Core Go Patterns
+Things that make Go code feel idiomatic and professional.
+
+Error handling patterns — wrapping errors, custom error types
+Variadic functions — functions that accept any number of arguments
+Defer — scheduling cleanup code to run at the end of a function
+Closures — functions that remember variables from their outer scope
+
+Stage 4 — Concurrency (Go's Biggest Strength)
+This is what makes Go stand out from other languages.
+
+Goroutines — running tasks concurrently
+Channels — communicating between goroutines
+Select statement — handling multiple channels
+WaitGroups & Mutexes — synchronizing concurrent work
+
+Stage 5 — Packages & Real Projects
+Putting it all together.
+
+Creating your own packages — organizing code across files
+Working with the standard library — os, strings, math, time, etc.
+Reading files & user input
+Building a small CLI tool
+HTTP basics — building a simple web server with net/http

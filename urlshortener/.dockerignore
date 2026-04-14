@@ -1,0 +1,37 @@
+# .dockerignore
+# Files listed here are EXCLUDED from the Docker build context.
+# This speeds up builds and keeps secrets out of images.
+
+# Git files — not needed in the image
+.git
+.gitignore
+
+# Environment files — NEVER bake secrets into the image
+# Real secrets come from environment variables at runtime
+.env
+.env.*
+!.env.example
+
+# Go build cache and test output
+*.test
+*.out
+coverage.html
+
+# Editor and OS files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Docker files themselves (no need to copy into the image)
+Dockerfile
+docker-compose.yml
+docker-compose.*.yml
+
+# Documentation
+README.md
+docs/
+
+# Temporary files
+tmp/

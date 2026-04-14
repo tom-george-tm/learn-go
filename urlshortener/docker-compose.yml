@@ -1,0 +1,140 @@
+# docker-compose.yml
+#
+# Defines the full local development stack:
+#   - app       → our Go/Fiber URL shortener
+#   - postgres  → PostgreSQL database
+#   - pgadmin   → web UI to inspect the database (optional but useful)
+#
+# Usage:
+#   docker compose up --build        → build and start everything
+#   docker compose up -d             → start in background (detached)
+#   docker compose down              → stop and remove containers
+#   docker compose down -v           → stop + delete volumes (wipes DB!)
+#   docker compose logs -f app       → tail logs from the app container
+#   docker compose exec postgres psql -U postgres urlshortener  → psql shell
+
+version: "3.9"
+
+services:
+
+  # ── Our Go Application ─────────────────────────────────────────────────────
+  app:
+    # Build from the Dockerfile in the current directory
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    # Name the container for easy reference in docker commands
+    container_name: urlshortener_app
+
+    # Map host port 3000 → container port 3000
+    # Access the API at http://localhost:3000
+    ports:
+      - "3000:3000"
+
+    # Environment variables passed directly to the container.
+    # These override anything in a .env file inside the container.
+    environment:
+      # PostgreSQL connection string — uses the service name "postgres" as host.
+      # Docker Compose creates an internal DNS so services can find each other by name.
+      DB_DSN: "host=postgres user=postgres password=postgres dbname=urlshortener port=5432 sslmode=disable"
+
+      # The public-facing base URL (used to build short URLs in responses)
+      BASE_URL: "http://localhost:3000"
+
+      # Port the Fiber server listens on inside the container
+      PORT: "3000"
+
+      # Set to "production" to disable SQL query logging
+      APP_ENV: "development"
+
+    # Don't start the app until postgres is healthy.
+    # Without this, the app might start before Postgres is ready and crash.
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    # Automatically restart the app if it crashes
+    restart: unless-stopped
+
+    # Connect to the shared network so app can reach postgres
+    networks:
+      - urlshortener_network
+
+  # ── PostgreSQL Database ────────────────────────────────────────────────────
+  postgres:
+    # Use the official PostgreSQL 16 image on Alpine (smaller than the default)
+    image: postgres:16-alpine
+
+    container_name: urlshortener_postgres
+
+    # PostgreSQL configuration via environment variables
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: urlshortener   # automatically creates this database on first run
+
+    # Map host port 5432 → container port 5432
+    # This lets you connect from your host machine using psql or pgAdmin desktop
+    ports:
+      - "5432:5432"
+
+    # Persist database data in a named volume.
+    # Without this, ALL DATA IS LOST when the container stops.
+    # With this, data survives container restarts and rebuilds.
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    # Health check — Docker waits until Postgres accepts connections before
+    # marking it healthy. The "app" service waits for this (see depends_on above).
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d urlshortener"]
+      interval: 5s      # check every 5 seconds
+      timeout: 5s       # consider failed if no response in 5s
+      retries: 5        # mark unhealthy after 5 consecutive failures
+      start_period: 10s # give Postgres 10s to initialise before checking
+
+    restart: unless-stopped
+    networks:
+      - urlshortener_network
+
+  # ── pgAdmin — Database Web UI (optional) ───────────────────────────────────
+  # Useful for inspecting your tables, running queries, and learning SQL.
+  # Remove this entire block if you don't need it.
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: urlshortener_pgadmin
+
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com    # login email for pgAdmin UI
+      PGADMIN_DEFAULT_PASSWORD: admin           # login password for pgAdmin UI
+
+    # Access pgAdmin at http://localhost:5050
+    ports:
+      - "5050:80"
+
+    # pgAdmin needs postgres to be running first
+    depends_on:
+      - postgres
+
+    restart: unless-stopped
+    networks:
+      - urlshortener_network
+
+# ── Named Volumes ──────────────────────────────────────────────────────────
+# Volumes are persistent storage managed by Docker.
+# "postgres_data" keeps your database alive across container restarts.
+# Run "docker compose down -v" to delete volumes and start fresh.
+volumes:
+  postgres_data:
+    driver: local
+
+# ── Networks ───────────────────────────────────────────────────────────────
+# A private network so all services can talk to each other by service name.
+# Services on this network can reach each other at:
+#   postgres  → postgres:5432
+#   app       → app:3000
+#   pgadmin   → pgadmin:80
+networks:
+  urlshortener_network:
+    driver: bridge

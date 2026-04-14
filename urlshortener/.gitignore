@@ -1,0 +1,19 @@
+# Binaries
+server
+*.exe
+*.out
+
+# Environment — NEVER commit real secrets
+.env
+
+# Go build artifacts
+vendor/
+*.test
+coverage.out
+coverage.html
+
+# Editor files
+.idea/
+.vscode/
+*.swp
+.DS_Store
